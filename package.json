@@ -1,4 +1,15 @@
-"scripts": {
-  "start": "node botv1.js",
-  "postinstall": "npm install yt-dlp-exec" 
+{
+  "name": "bot-vo-cuc-ma-than",
+  "version": "2.0.0",
+  "description": "He thong tai media đa nen tang",
+  "main": "botv1.js",
+  "scripts": {
+    "start": "node botv1.js",
+    "postinstall": "npm install yt-dlp-exec"
+  },
+  "dependencies": {
+    "telegraf": "^4.12.2",
+    "yt-dlp-exec": "^1.0.2",
+    "axios": "^1.6.0"
+  }
 }
