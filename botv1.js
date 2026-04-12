@@ -4,13 +4,12 @@ const http = require('http');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
-    console.error("❌ LỖI: Chưa cấu hình BOT_TOKEN!");
     process.exit(1);
 }
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Mở port 2312 cho Render
+// Mở port 2312
 http.createServer((req, res) => {
     res.write('Bot is running!');
     res.end();
@@ -29,14 +28,15 @@ bot.on('text', async (ctx) => {
             playlistItems: '1'
         });
 
-        // 1. NHẬN DIỆN PROFILE (Facebook, TikTok, YouTube)
         const isProfile = info._type === 'playlist' || url.includes('/@') || url.includes('facebook.com') || url.includes('profile.php');
 
         if (isProfile) {
             const name = info.title || 'N/A';
             const platform = info.extractor_key || 'N/A';
             const uploaderId = info.uploader_id || info.id || 'N/A';
-            const avatar = info.thumbnails?.pop()?.url || ''; // Lấy ảnh chất lượng cao nhất
+            
+            // Cải tiến lấy Avatar: Thử lấy ảnh đầu tiên hoặc ảnh thumb mặc định
+            const avatar = info.thumbnail || (info.thumbnails && info.thumbnails.length > 0 ? info.thumbnails[0].url : null);
 
             let profileMsg = `👤 **THÔNG TIN TÀI KHOẢN**\n\n` +
                              `🌐 **Nền tảng:** ${platform}\n` +
@@ -44,23 +44,25 @@ bot.on('text', async (ctx) => {
                              `🆔 **ID:** \`${uploaderId}\`\n` +
                              `🎥 **Video/Post:** ${info.playlist_count || 'N/A'}`;
 
-            if (avatar && (url.includes('tiktok') || url.includes('youtube'))) {
-                await ctx.replyWithPhoto(avatar, { caption: profileMsg, parse_mode: 'Markdown' });
+            if (avatar) {
+                try {
+                    await ctx.replyWithPhoto(avatar, { caption: profileMsg, parse_mode: 'Markdown' });
+                    // Nếu gửi được ảnh thì xóa tin nhắn trạng thái cũ
+                    return ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => {});
+                } catch (imgErr) {
+                    // Nếu lỗi ảnh (do link ảnh bị chặn), gửi tin nhắn văn bản bình thường
+                    return ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, profileMsg, { parse_mode: 'Markdown' });
+                }
             } else {
-                await ctx.reply(profileMsg, { parse_mode: 'Markdown' });
+                return ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, profileMsg, { parse_mode: 'Markdown' });
             }
-            return;
         }
 
-        // 2. NHẬN DIỆN VIDEO - TRẢ VỀ DIRECT LINK
-        // Lọc lấy link video có cả hình lẫn tiếng (best)
+        // PHẦN VIDEO - DIRECT LINK
         const bestFormat = info.formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none').pop() || info;
         const directLink = bestFormat.url;
 
-        const videoMsg = `🎬 **KẾT QUẢ SOI LINK**\n\n` +
-                         `📌 **Tiêu đề:** ${info.title}\n` +
-                         `👤 **Tác giả:** ${info.uploader || 'N/A'}\n` +
-                         `📦 **Dung lượng:** ${((info.filesize || info.filesize_approx || 0) / 1048576).toFixed(2)} MB`;
+        const videoMsg = `🎬 **KẾT QUẢ SOI LINK**\n\n📌 **Tiêu đề:** ${info.title}\n👤 **Tác giả:** ${info.uploader || 'N/A'}\n📦 **Dung lượng:** ${((info.filesize || info.filesize_approx || 0) / 1048576).toFixed(2)} MB`;
 
         await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, videoMsg, {
             parse_mode: 'Markdown',
@@ -71,10 +73,8 @@ bot.on('text', async (ctx) => {
         });
 
     } catch (error) {
-        console.error("Lỗi soi link:", error);
-        ctx.reply('❌ Không thể soi link này. Có thể do link riêng tư hoặc Facebook chặn.');
+        ctx.reply('❌ Không lấy được dữ liệu. Link có thể bị chặn hoặc riêng tư.');
     }
 });
 
 bot.launch();
-console.log('🤖 Bot VIP V1 đã sửa lỗi - Đang chạy...');
