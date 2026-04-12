@@ -1,72 +1,78 @@
 const { Telegraf, Markup } = require('telegraf');
 const youtubeDl = require('yt-dlp-exec');
-const fs = require('fs');
-const path = require('path');
 const http = require('http');
 
-// 1. Cấu hình Token từ biến môi trường (Environment Variable)
-// Bạn cần vào Render -> Environment -> Thêm BOT_TOKEN vào đó.
 const BOT_TOKEN = process.env.BOT_TOKEN;
-
-if (!BOT_TOKEN) {
-    console.error("❌ LỖI: Chưa có BOT_TOKEN! Hãy thêm vào mục Environment trên Render.");
-    process.exit(1);
-}
-
 const bot = new Telegraf(BOT_TOKEN);
-const userState = new Map();
 
-// 2. Tạo server ảo để mở port 2312
-// Việc này giúp Render không báo lỗi "Port timeout"
+// Server ảo giữ port 2312
 http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.write('Bot is running on port 2312!');
+    res.write('Bot is running!');
     res.end();
-}).listen(2312, () => {
-    console.log('🌐 Server đang lắng nghe tại cổng 2312');
-});
+}).listen(2312);
 
-// 3. Xử lý tin nhắn chứa Link
 bot.on('text', async (ctx) => {
     const url = ctx.message.text;
     if (!url.includes('http')) return;
 
-    const statusMsg = await ctx.reply('🔍 Đang tra cứu dữ liệu...');
+    const statusMsg = await ctx.reply('🔍 Đang trích xuất dữ liệu...');
 
     try {
         const info = await youtubeDl(url, { 
             dumpSingleJson: true, 
             noCheckCertificates: true,
-            playlistItems: '1' 
+            playlistItems: '1'
         });
 
-        const isProfile = info._type === 'playlist' || url.includes('/@') || url.includes('/channel/');
+        // 1. KIỂM TRA NẾU LÀ PROFILE (FB, TikTok, YT)
+        const isProfile = info._type === 'playlist' || url.includes('/@') || url.includes('facebook.com/') || url.includes('profile.php');
 
         if (isProfile) {
-            const profileText = `👤 **TÀI KHOẢN**\n\n` +
-                                `🌐 **Nguồn:** ${info.extractor_key}\n` +
-                                `📛 **Tên:** ${info.title || 'N/A'}\n` +
-                                `🆔 **ID:** \`${info.uploader_id || info.id || 'N/A'}\`\n` +
-                                `🎥 **Video:** ${info.playlist_count || 'N/A'}\n` +
-                                `🔗 [Link Profile](${info.webpage_url})`;
+            const name = info.title || 'N/A';
+            const platform = info.extractor_key || 'N/A';
+            const avatar = info.thumbnails?.[0]?.url || ''; // Lấy ảnh đại diện
+            const uploaderId = info.uploader_id || info.id || 'N/A';
 
-            await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, profileText, { parse_mode: 'Markdown' });
+            let profileMsg = `👤 **THÔNG TIN TÀI KHOẢN**\n\n` +
+                             `🌐 **Nền tảng:** ${platform}\n` +
+                             `📛 **Tên:** ${name}\n` +
+                             `🆔 **ID:** \`${uploaderId}\`\n` +
+                             `🎥 **Video/Post:** ${info.playlist_count || 'N/A'}`;
+
+            if (avatar && url.includes('tiktok')) {
+                await ctx.replyWithPhoto(avatar, { caption: profileMsg, parse_mode: 'Markdown' });
+            } else {
+                await ctx.reply(profileMsg, { parse_mode: 'Markdown' });
+            }
             return;
         }
 
-        const fileSize = info.filesize || info.filesize_approx || 0;
-        const duration = info.duration ? `${Math.floor(info.duration / 60)}p ${info.duration % 60}s` : 'N/A';
-        
-        const videoInfoText = `🎬 **VIDEO INFO**\n\n📌 **Tiêu đề:** ${info.title}\n👤 **Tác giả:** ${info.uploader || 'N/A'}\n⏱ **Thời lượng:** ${duration}\n📦 **Dung lượng:** ${(fileSize / (1024 * 1024)).toFixed(2)} MB`;
+        // 2. NẾU LÀ VIDEO - TRẢ VỀ DIRECT LINK
+        // Lấy định dạng video tốt nhất có cả hình và tiếng
+        const bestFormat = info.formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none').pop() || info;
+        const directLink = bestFormat.url;
 
-        userState.set(ctx.chat.id, { url, title: info.title, fileSize });
+        const videoMsg = `🎬 **KẾT QUẢ SOI LINK**\n\n` +
+                         `📌 **Tiêu đề:** ${info.title}\n` +
+                         `👤 **Tác giả:** ${info.uploader || 'N/A'}\n` +
+                         `📦 **Dung lượng:** ${( (info.filesize || info.filesize_approx || 0) / 1048576 ).toFixed(2)} MB`;
 
-        await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, videoInfoText, {
+        await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, videoMsg, {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard([
-                [Markup.button.callback('📥 Tải Video', 'dl_video'), Markup.button.callback('🎵 Tải MP3', 'dl_audio')]
+                [Markup.button.url('🚀 Tải Video (Direct Link)', directLink)],
+                [Markup.button.url('🎵 Tải Nhạc (MP3 Link)', info.url)] // Link gốc thường hỗ trợ stream nhạc
             ])
         });
+
+    } catch (error) {
+        console.error(error);
+        ctx.reply('❌ Lỗi: Link không công khai hoặc không lấy được Direct Link.');
+    }
+});
+
+bot.launch();
+console.log('🤖 Bot VIP V1 - Direct Link Mode đã sẵn sàng!');
 
     } catch (error) {
         ctx.reply('❌ Link không hỗ trợ hoặc lỗi hệ thống.');
