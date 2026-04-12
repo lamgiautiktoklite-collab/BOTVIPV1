@@ -1,0 +1,14 @@
+{
+  "name": "bot-vo-cuc-ma-than",
+  "version": "2.0.0",
+  "description": "Hệ thống tải media đa nền tảng",
+  "main": "botv1.js",
+  "scripts": {
+    "start": "node botv1.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.12.2",
+    "yt-dlp-exec": "^1.0.2",
+    "axios": "^1.6.0"
+  }
+}
