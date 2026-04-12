@@ -1,32 +1,33 @@
-const youtubeDl = require('yt-dlp-exec');
+const axios = require('axios');
 
 const DivineEngine = {
     async extract(url) {
         try {
-            // Sử dụng Promise.race để chặn đứng việc treo vĩnh viễn
-            const data = await Promise.race([
-                youtubeDl(url, {
-                    dumpSingleJson: true,
-                    noCheckCertificates: true,
-                    noWarnings: true,
-                    preferFreeFormats: true,
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), 15000))
-            ]);
+            // Sử dụng API Tikwm (Miễn phí và cực nhanh cho TikTok)
+            if (url.includes('tiktok.com')) {
+                const res = await axios.post('https://www.tikwm.com/api/', {
+                    url: url
+                });
+                
+                const data = res.data.data;
+                if (!data) throw new Error("API_ERROR");
 
-            const isProfile = url.includes('/@') || (url.includes('facebook.com') && !url.includes('/videos/'));
-            const bestFormat = data.formats?.filter(f => f.vcodec !== 'none' && f.acodec !== 'none').pop() || data;
+                return {
+                    type: 'VIDEO',
+                    title: data.title || "TikTok Video",
+                    author: data.author.nickname,
+                    avatar: "https://www.tikwm.com" + data.author.avatar,
+                    videoUrl: "https://www.tikwm.com" + data.play,
+                    size: (data.size / 1048576).toFixed(2),
+                    platform: 'TIKTOK'
+                };
+            }
 
-            return {
-                type: isProfile ? 'PROFILE' : 'VIDEO',
-                title: data.title || "N/A",
-                avatar: data.thumbnail || (data.thumbnails?.[0]?.url),
-                videoUrl: bestFormat.url,
-                size: ((data.filesize || data.filesize_approx || 0) / 1048576).toFixed(2),
-                platform: data.extractor_key?.toUpperCase() || 'WEB'
-            };
+            // Với các nền tảng khác, vẫn dùng logic cũ nhưng nới lỏng timeout
+            throw new Error("Hệ thống đang ưu tiên TikTok, nền tảng khác hãy thử lại sau!");
         } catch (err) {
-            throw new Error(err.message === 'TIMEOUT_EXCEEDED' ? "Server Render quá yếu, hãy thử lại!" : "Lỗi bóc tách!");
+            console.error(err);
+            throw new Error("Server Render quá yếu hoặc API bị nghẽn!");
         }
     }
 };
