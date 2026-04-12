@@ -3,69 +3,54 @@ const DivineEngine = require('./engine');
 const startServer = require('./server');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-if (!BOT_TOKEN) process.exit(1);
-
 const bot = new Telegraf(BOT_TOKEN);
 
-// Khởi động Server ảo port 2312
 startServer(2312);
 
-// 1. CHẶN VÒNG LẶP: Bot không xử lý tin nhắn từ chính nó hoặc bot khác
-bot.use(async (ctx, next) => {
-    if (ctx.message && ctx.message.from.is_bot) return; 
-    await next();
-});
-
-bot.start((ctx) => {
-    ctx.replyWithMarkdown(`🔥 **VÔ CỰC MA THẦN v2.1**\nHệ thống đã fix lỗi lặp. Hãy gửi link!`);
-});
+// Hàm hỗ trợ gửi/sửa tin nhắn cực mạnh (né lỗi 400)
+async function safeEdit(ctx, msgId, text, keyboard) {
+    try {
+        await ctx.telegram.editMessageText(ctx.chat.id, msgId, null, text, {
+            parse_mode: 'Markdown',
+            ...keyboard
+        });
+    } catch (e) {
+        // Nếu không edit được thì gửi tin nhắn mới luôn cho máu
+        await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+    }
+}
 
 bot.on('text', async (ctx) => {
+    if (ctx.message.from.is_bot) return;
     const text = ctx.message.text;
     if (!text.includes('http')) return;
 
-    // Trả lời ngay để Telegram biết Bot đã nhận tin (tránh gửi lại webhook)
-    const statusMsg = await ctx.reply('📡 **Đang truy quét...**');
+    const statusMsg = await ctx.reply('📡 **Đại Thần đang truy quét...**');
 
     try {
         const result = await DivineEngine.extract(text);
 
         if (result.type === 'PROFILE') {
-            const msg = `👤 **THÔNG TIN ĐỐI TƯỢNG**\n\n` +
-                        `🏛 **Nền tảng:** #${result.platform}\n` +
-                        `📛 **Tên:** ${result.title}\n` +
-                        `🆔 **ID:** \`${result.id}\``;
-
+            const msg = `👤 **THÔNG TIN ĐỐI TƯỢNG**\n\n🏛 **Nền tảng:** #${result.platform}\n📛 **Tên:** ${result.title}\n🆔 **ID:** \`${result.id}\``;
+            
             if (result.avatar) {
                 await ctx.replyWithPhoto(result.avatar, { caption: msg, parse_mode: 'Markdown' });
                 return ctx.deleteMessage(statusMsg.message_id).catch(() => {});
             }
-            return ctx.editMessageText(msg, { parse_mode: 'Markdown' });
+            return safeEdit(ctx, statusMsg.message_id, msg);
         }
 
-        const videoMsg = `🎬 **DỮ LIỆU TRÍCH XUẤT**\n\n` +
-                         `📌 **Tiêu đề:** ${result.title}\n` +
-                         `📦 **Size:** ${result.size} MB`;
+        const videoMsg = `🎬 **DỮ LIỆU TRÍCH XUẤT**\n\n📌 **Tiêu đề:** ${result.title}\n📦 **Size:** ${result.size} MB`;
+        const keyboard = Markup.inlineKeyboard([
+            [Markup.button.url('🚀 Tải Video (Direct Link)', result.videoUrl)]
+        ]);
 
-        await ctx.editMessageText(videoMsg, {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([
-                [Markup.button.url('🚀 Tải Video (Direct Link)', result.videoUrl)]
-            ])
-        });
+        await safeEdit(ctx, statusMsg.message_id, videoMsg, keyboard);
 
     } catch (err) {
-        // Nếu lỗi, sửa tin nhắn cũ thay vì gửi tin mới (để tránh rác)
-        ctx.editMessageText(`💀 **Lỗi:** Link không hợp lệ hoặc bị chặn.`).catch(() => {});
+        console.error("Lỗi thực thi:", err.message);
+        await safeEdit(ctx, statusMsg.message_id, `💀 **Lỗi:** ${err.message}`);
     }
 });
 
-// Chế độ xử lý lỗi crash để bot tự khởi động lại
-bot.catch((err) => {
-    console.error('Bot Error:', err);
-});
-
-bot.launch().then(() => console.log('🤖 BOTVIPV1 Đã Fix Lỗi Lặp!'));
-
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+bot.launch({ dropPendingUpdates: true });
