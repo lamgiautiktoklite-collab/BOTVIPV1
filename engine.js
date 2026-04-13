@@ -1,14 +1,13 @@
 const axios = require('axios');
 
 const DivineEngine = {
-    async extract(url) {
+    async extract(input, isLink) {
         try {
-            // 1. XỬ LÝ TRA PROFILE (Nếu link chứa @ nhưng không phải link video cụ thể)
-            if (url.includes('@') && !url.includes('/video/')) {
-                // Sử dụng API quét profile
-                const res = await axios.get(`https://www.tikwm.com/api/user/info?uniqueId=${url.split('@')[1].split('?')[0]}`);
+            // --- TRƯỜNG HỢP TRA PROFILE BẰNG USERNAME ---
+            if (!isLink) {
+                const res = await axios.get(`https://www.tikwm.com/api/user/info?uniqueId=${input}`);
                 const u = res.data.data;
-                if (!u) throw new Error("Không tìm thấy Profile này!");
+                if (!u) throw new Error("Không tìm thấy profile này rồi ní!");
 
                 return {
                     type: 'PROFILE',
@@ -17,30 +16,35 @@ const DivineEngine = {
                     avatar: "https://www.tikwm.com" + u.user.avatarThumb,
                     signature: u.user.signature || "Không có tiểu sử",
                     stats: {
-                        follower: u.stats.followerCount,
-                        heart: u.stats.heartCount,
-                        videoCount: u.stats.videoCount
+                        follower: u.stats.followerCount || 0,
+                        heart: u.stats.heartCount || 0,
+                        videoCount: u.stats.videoCount || 0
                     }
                 };
             }
 
-            // 2. XỬ LÝ DOWNLOAD VIDEO (Link video hoặc link rút gọn vt.tiktok)
-            if (url.includes('tiktok.com')) {
-                const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`);
-                const v = res.data.data;
-                if (!v) throw new Error("API Download đang nghẽn!");
+            // --- TRƯỜNG HỢP TẢI VIDEO BẰNG LINK ---
+            const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(input)}`);
+            const v = res.data.data;
+            if (!v) throw new Error("API Download đang nghẽn!");
 
-                return {
-                    type: 'VIDEO',
-                    nickname: v.author.nickname,
-                    title: v.title || "Video TikTok",
-                    videoUrl: v.play.startsWith('http') ? v.play : "https://www.tikwm.com" + v.play,
-                    cover: "https://www.tikwm.com" + v.cover
-                };
-            }
+            const getFullUrl = (path) => {
+                if (!path) return null;
+                return path.startsWith('http') ? path : "https://www.tikwm.com" + path;
+            };
+
+            return {
+                type: 'VIDEO',
+                nickname: v.author.nickname,
+                title: v.title || "Video TikTok",
+                videoUrl: getFullUrl(v.play || v.wmplay),
+                cover: getFullUrl(v.cover)
+            };
         } catch (err) {
-            throw new Error("Lỗi hệ thống rồi ní!");
+            console.error(err.message);
+            throw new Error("Hệ thống nghẽn, mai dán lại nha ní!");
         }
     }
 };
+
 module.exports = DivineEngine;
