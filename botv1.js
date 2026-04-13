@@ -1,60 +1,36 @@
-const { Telegraf, Markup } = require('telegraf');
-const DivineEngine = require('./engine');
-const startServer = require('./server');
-
-const bot = new Telegraf(process.env.BOT_TOKEN);
-startServer(2312);
-
-async function safeEdit(ctx, msgId, text, keyboard) {
-    try {
-        await ctx.telegram.editMessageText(ctx.chat.id, msgId, null, text, {
-            parse_mode: 'Markdown',
-            ...keyboard
-        });
-    } catch (e) {
-        await ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
-    }
-}
-
 bot.on('text', async (ctx) => {
-    if (ctx.message.from.is_bot) return;
     const text = ctx.message.text;
     if (!text.includes('http')) return;
 
-    const statusMsg = await ctx.reply('📡 **Đại Thần đang truy quét...**');
+    const statusMsg = await ctx.reply('📡 **Đại Thần đang phân tích...**');
 
     try {
         const result = await DivineEngine.extract(text);
 
-        if (result.platform === 'TIKTOK') {
-            const msg = `👤 **THÔNG TIN TIKTOK**\n\n` +
-                        `📛 **Tên:** ${result.nickname}\n` +
-                        `🆔 **ID:** \`${result.uniqueId}\`\n` +
-                        `📊 **Followers:** ${result.stats.follower}\n` +
-                        `❤️ **Tổng Tim:** ${result.stats.heart}`;
-
-            const keyboard = Markup.inlineKeyboard([
-                [Markup.button.url('🚀 Tải Video (Không Logo)', result.videoUrl)]
-            ]);
-
-            if (result.avatar) {
-                await ctx.replyWithPhoto(result.avatar, { caption: msg, parse_mode: 'Markdown', ...keyboard });
-                return ctx.deleteMessage(statusMsg.message_id).catch(() => {});
-            }
-            return safeEdit(ctx, statusMsg.message_id, msg, keyboard);
+        // NẾU LÀ PROFILE
+        if (result.type === 'PROFILE') {
+            const profileMsg = `👤 **HỒ SƠ ĐẠI THẦN**\n\n` +
+                               `📛 **Tên:** ${result.nickname}\n` +
+                               `🆔 **ID:** \`${result.uniqueId}\`\n` +
+                               `📝 **Bio:** ${result.signature}\n\n` +
+                               `📊 **Followers:** ${result.stats.follower}\n` +
+                               `❤️ **Tổng Tim:** ${result.stats.heart}\n` +
+                               `🎥 **Số video:** ${result.stats.videoCount}`;
+            
+            await ctx.replyWithPhoto(result.avatar, { caption: profileMsg, parse_mode: 'Markdown' });
+        } 
+        
+        // NẾU LÀ VIDEO
+        else if (result.type === 'VIDEO') {
+            const videoMsg = `🎬 **VIDEO TRÍCH XUẤT**\n\n📌 **Tiêu đề:** ${result.title}\n👤 **Tác giả:** ${result.nickname}`;
+            const keyboard = Markup.inlineKeyboard([[Markup.button.url('🚀 Tải Video (Không Logo)', result.videoUrl)]]);
+            
+            await ctx.replyWithPhoto(result.cover, { caption: videoMsg, reply_markup: keyboard.reply_markup });
         }
 
-        const otherMsg = `🎬 **DỮ LIỆU TRÍCH XUẤT**\n\n📌 **Tiêu đề:** ${result.title}\n🏛 **Nền tảng:** #${result.platform}`;
-        const otherKeyboard = Markup.inlineKeyboard([[Markup.button.url('🚀 Tải Video', result.videoUrl)]]);
-        await safeEdit(ctx, statusMsg.message_id, otherMsg, otherKeyboard);
+        await ctx.deleteMessage(statusMsg.message_id).catch(() => {});
 
     } catch (err) {
-        await safeEdit(ctx, statusMsg.message_id, `💀 **Lỗi:** ${err.message}`);
+        await ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, `💀 **Lỗi:** ${err.message}`);
     }
-});
-
-// Fix lỗi 409 bằng cách xóa webhook trước khi chạy
-bot.telegram.deleteWebhook().then(() => {
-    bot.launch({ dropPendingUpdates: true });
-    console.log("Bot đã sẵn sàng!");
 });
