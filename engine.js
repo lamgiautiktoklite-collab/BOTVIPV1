@@ -3,47 +3,44 @@ const axios = require('axios');
 const DivineEngine = {
     async extract(url) {
         try {
-            if (url.includes('tiktok.com')) {
-                // ĐỔI SANG API TIKLYDOWN ĐỂ LẤY FULL INFO
-                const res = await axios.get(`https://api.tiklydown.eu.org/api/download?url=${encodeURIComponent(url)}`);
-                const result = res.data;
-
-                if (!result || !result.author) {
-                    throw new Error("API này cũng nghẽn rồi!");
-                }
+            // 1. XỬ LÝ TRA PROFILE (Nếu link chứa @ nhưng không phải link video cụ thể)
+            if (url.includes('@') && !url.includes('/video/')) {
+                // Sử dụng API quét profile
+                const res = await axios.get(`https://www.tikwm.com/api/user/info?uniqueId=${url.split('@')[1].split('?')[0]}`);
+                const u = res.data.data;
+                if (!u) throw new Error("Không tìm thấy Profile này!");
 
                 return {
-                    platform: 'TIKTOK',
-                    nickname: result.author.nickname || "User",
-                    uniqueId: result.author.uniqueId || "hidden",
-                    avatar: result.author.avatar,
-                    // Lấy link video không logo chuẩn
-                    videoUrl: result.video.noWatermark || result.video.watermark,
-                    title: result.title || "Video TikTok",
+                    type: 'PROFILE',
+                    nickname: u.user.nickname,
+                    uniqueId: u.user.uniqueId,
+                    avatar: "https://www.tikwm.com" + u.user.avatarThumb,
+                    signature: u.user.signature || "Không có tiểu sử",
                     stats: {
-                        // Thằng này lấy stats cực chuẩn nè ní
-                        follower: result.author.stats?.followerCount || result.statistics?.followerCount || "N/A",
-                        heart: result.statistics?.likeCount || result.statistics?.diggCount || 0
+                        follower: u.stats.followerCount,
+                        heart: u.stats.heartCount,
+                        videoCount: u.stats.videoCount
                     }
                 };
             }
 
-            // FB GIỮ NGUYÊN VÌ NÓ ĐANG CHẠY NGON
-            if (url.includes('facebook.com') || url.includes('fb.watch')) {
-                const res = await axios.get(`https://api.vytub.com/facebook/info?url=${encodeURIComponent(url)}`);
+            // 2. XỬ LÝ DOWNLOAD VIDEO (Link video hoặc link rút gọn vt.tiktok)
+            if (url.includes('tiktok.com')) {
+                const res = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`);
+                const v = res.data.data;
+                if (!v) throw new Error("API Download đang nghẽn!");
+
                 return {
-                    platform: 'FACEBOOK',
-                    title: res.data.title || "Video Facebook",
-                    videoUrl: res.data.hd || res.data.sd,
-                    avatar: res.data.thumbnail,
-                    stats: { follower: "N/A", heart: "N/A" }
+                    type: 'VIDEO',
+                    nickname: v.author.nickname,
+                    title: v.title || "Video TikTok",
+                    videoUrl: v.play.startsWith('http') ? v.play : "https://www.tikwm.com" + v.play,
+                    cover: "https://www.tikwm.com" + v.cover
                 };
             }
         } catch (err) {
-            console.error("Lỗi Engine:", err.message);
-            throw new Error("Tất cả cổng API đều bị TikTok chặn rồi, mai thử lại ní ơi!");
+            throw new Error("Lỗi hệ thống rồi ní!");
         }
     }
 };
-
 module.exports = DivineEngine;
