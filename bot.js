@@ -3,49 +3,36 @@ const { Telegraf } = require('telegraf');
 const axios = require('axios');
 const http = require('http');
 
-// --- TẠO WEB SERVER ĐỂ RENDER KHÔNG STOP BOT ---
+// Web Server giữ bot sống trên Render
 http.createServer((req, res) => {
-    res.write("Bot TikTok is Live!");
+    res.write("Bot is running!");
     res.end();
 }).listen(process.env.PORT || 3000);
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-/**
- * Giải mã ngày tạo từ TikTok ID (Đã fix lỗi xuyên không)
- */
 const getCreateTime = (id) => {
     try {
         const bigId = BigInt(id);
         const f = (n) => String(n).padStart(2, '0');
-        
         let timestamp = Number(bigId / 2147483648n);
         let date = new Date(timestamp * 1000);
-
         if (date.getFullYear() > 2028 || date.getFullYear() < 2015) {
             timestamp = Number(bigId / 4294967296n);
             date = new Date(timestamp * 1000);
         }
-
         return `${f(date.getHours())}:${f(date.getMinutes())}:${f(date.getSeconds())} || ${f(date.getDate())}/${f(date.getMonth() + 1)}/${date.getFullYear()}`;
-    } catch (e) {
-        return "Không xác định";
-    }
+    } catch (e) { return "Không xác định"; }
 };
 
-// Chào mừng
-bot.start((ctx) => ctx.reply('🚀 Bot sẵn sàng! \n- Gửi link TikTok để tải video.\n- Gõ /tt [username] để check info.'));
-
-// Lệnh /tt [username]
+// Check Info User
 bot.command('tt', async (ctx) => {
     const args = ctx.message.text.split(' ');
     if (args.length < 2) return ctx.reply('⚠️ Cú pháp: /tt [username]');
-    
     const username = args[1].trim().replace('@', '');
     try {
         await ctx.sendChatAction('upload_photo');
         const res = await axios.get(`https://www.tikwm.com/api/user/info?unique_id=${username}`);
-        
         if (res.data.code === 0 && res.data.data) {
             const { user, stats } = res.data.data;
             const caption = `╭─────────────⭓
@@ -66,43 +53,41 @@ bot.command('tt', async (ctx) => {
 │ 𝗩𝗶𝗱𝗲𝗼𝘀: ${stats.videoCount.toLocaleString()}
 ╰─────────────⭓`;
             await ctx.replyWithPhoto({ url: user.avatarLarger }, { caption });
-        } else {
-            await ctx.reply('❌ Không tìm thấy user này.');
         }
-    } catch (err) {
-        await ctx.reply('⚠️ Lỗi API Info!');
-    }
+    } catch (e) {}
 });
 
-// Tự động tải video khi gửi link
+// Tự động tải video (Đã bỏ tin nhắn thừa)
 bot.on('text', async (ctx) => {
     const text = ctx.message.text.trim();
     if (!text.includes('tiktok.com') || text.startsWith('/')) return;
 
     try {
-        await ctx.reply('⏳ Đang xử lý video không logo...');
+        // Chỉ hiện hiệu ứng "đang gửi video" ở trên cùng, không gửi tin nhắn rác vào chat
         await ctx.sendChatAction('upload_video');
+        
         const res = await axios.get(`https://www.tikwm.com/api/?url=${text}`);
         const data = res.data.data;
 
         if (res.data.code === 0) {
             if (data.play) {
-                await ctx.replyWithVideo({ url: data.play }, { caption: `🎬 ${data.title || 'TikTok Video'}` });
+                await ctx.replyWithVideo(
+                    { url: data.play },
+                    { caption: `🎬 ${data.title || 'TikTok Video'}` }
+                );
             } else if (data.images) {
+                // Đối với bộ ảnh thì vẫn nên báo một câu cho user biết
+                const msg = await ctx.reply('📸 Đang gửi bộ ảnh...');
                 for (let img of data.images) {
                     await ctx.replyWithPhoto({ url: img });
                 }
+                // Gửi xong thì xóa câu thông báo đi cho sạch
+                await ctx.deleteMessage(msg.message_id).catch(() => {});
             }
-        } else {
-            await ctx.reply('❌ Link không tải được (có thể video riêng tư).');
         }
     } catch (e) {
-        await ctx.reply('⚠️ Lỗi tải video!');
+        console.error("Lỗi tải!");
     }
 });
 
-bot.launch().then(() => console.log('✅ Bot đang chạy trên Render...'));
-
-// Graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+bot.launch().then(() => console.log('✅ Bot TikTok xịn xò đã chạy!'));
