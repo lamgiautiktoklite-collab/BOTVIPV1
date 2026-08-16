@@ -7,7 +7,7 @@ const http = require('http');
 http.createServer((req, res) => {
     res.write("Bot is running!");
     res.end();
-}).listen(process.env.PORT || 3000);
+}).listen(process.env.PORT || 10000);
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
